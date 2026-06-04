@@ -111,7 +111,7 @@ function renderRecord(rec) {
     addBubble({
       role: "agent", agentId: rec.agentId, name: rec.isim, emoji: rec.emoji,
       color: rec.renk || colorOf(rec.agentId), text: rec.content,
-      trace: rec.trace, kaynaklar: rec.kaynaklar,
+      trace: rec.trace, kaynaklar: rec.kaynaklar, plan: rec.plan,
     });
   }
 }
@@ -259,8 +259,8 @@ elForm.addEventListener("submit", async (e) => {
     typing.remove();
     if (data.hata) { addBubble({ role: "agent", name: "Bir saniye", emoji: "⏳", color: "#e2a36a", text: data.hata }); elInput.value = text; }
     else if (data.mode === "panel")
-      data.yanitlar.forEach((y) => addBubble({ role: "agent", agentId: y.agentId, name: y.isim, emoji: y.emoji, color: y.renk || colorOf(y.agentId), text: y.metin, trace: y.trace, kaynaklar: y.kaynaklar }));
-    else addBubble({ role: "agent", agentId: data.agentId, name: data.isim, emoji: data.emoji, color: data.renk || colorOf(data.agentId), text: data.metin, trace: data.trace, kaynaklar: data.kaynaklar });
+      data.yanitlar.forEach((y) => addBubble({ role: "agent", agentId: y.agentId, name: y.isim, emoji: y.emoji, color: y.renk || colorOf(y.agentId), text: y.metin, trace: y.trace, kaynaklar: y.kaynaklar, plan: y.plan }));
+    else addBubble({ role: "agent", agentId: data.agentId, name: data.isim, emoji: data.emoji, color: data.renk || colorOf(data.agentId), text: data.metin, trace: data.trace, kaynaklar: data.kaynaklar, plan: data.plan });
     loadMemory();
   } catch (err) {
     typing.remove();
@@ -271,7 +271,7 @@ elForm.addEventListener("submit", async (e) => {
 });
 
 // ---------- Balon ----------
-function addBubble({ role, name, emoji, color, text, trace, kaynaklar }) {
+function addBubble({ role, name, emoji, color, text, trace, kaynaklar, plan }) {
   removeWelcome();
   const msg = document.createElement("div");
   msg.className = `msg ${role}`;
@@ -284,6 +284,7 @@ function addBubble({ role, name, emoji, color, text, trace, kaynaklar }) {
       if (t.tur === "danisma") return `<div class="chip">💬 <b>${isimOf(t.soran)}</b>, <b>${isimOf(t.sorulan)}</b> meslektaşına danışıyor…</div>`;
       if (t.tur === "arama") return `<div class="chip">🔎 İnternette araştırıyor: "${escapeHtml(t.sorgu || "")}"</div>`;
       if (t.tur === "hafiza") return `<div class="chip">🧠 Ortak hafızaya not: ${escapeHtml(t.bilgi || "")}</div>`;
+      if (t.tur === "plan") return `<div class="chip">🥗 Beslenme planı oluşturdu</div>`;
       return "";
     }).filter(Boolean).join("");
     if (chips) traceHtml = `<div class="trace">${chips}</div>`;
@@ -304,8 +305,123 @@ function addBubble({ role, name, emoji, color, text, trace, kaynaklar }) {
       ${traceHtml}${srcHtml}
     </div>`;
   elMessages.appendChild(msg);
+  if (plan && plan.ogunler && plan.ogunler.length) {
+    msg.querySelector(".bubble").appendChild(buildPlanCard(plan));
+  }
   elMessages.scrollTop = elMessages.scrollHeight;
   return msg;
+}
+
+// ---------- Beslenme planı kartı (tiklenebilir + indirilebilir) ----------
+function buildPlanCard(plan) {
+  const tikler = plan.tikler || {};
+  const gruplar = {};
+  plan.ogunler.forEach((o, i) => {
+    const g = o.gun || "Plan";
+    (gruplar[g] = gruplar[g] || []).push({ ...o, _i: i });
+  });
+
+  let gunlerHtml = "";
+  for (const [gun, liste] of Object.entries(gruplar)) {
+    const satirlar = liste.map((o) => `
+      <label class="plan-item ${tikler[o._i] ? "done" : ""}">
+        <input type="checkbox" data-key="${o._i}" ${tikler[o._i] ? "checked" : ""}/>
+        <span class="pi-check"></span>
+        <span class="pi-text"><b>${escapeHtml(o.ogun || "")}</b> ${escapeHtml(o.icerik || "")}${o.kalori ? ` <em>${escapeHtml(o.kalori)}</em>` : ""}</span>
+      </label>`).join("");
+    gunlerHtml += `<div class="plan-day"><div class="pd-title">${escapeHtml(gun)}</div>${satirlar}</div>`;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "plan-card";
+  wrap.innerHTML = `
+    <div class="plan-head">
+      <div class="plan-title">🥗 ${escapeHtml(plan.baslik || "Beslenme Planı")}${plan.gunlukKalori ? ` <small>${escapeHtml(plan.gunlukKalori)}</small>` : ""}</div>
+      <div class="plan-actions">
+        <button type="button" class="plan-btn" data-act="excel">⬇ Excel</button>
+        <button type="button" class="plan-btn" data-act="pdf">⬇ PDF</button>
+      </div>
+    </div>
+    <div class="plan-body">${gunlerHtml}</div>
+    ${plan.notlar ? `<div class="plan-notes">📝 ${escapeHtml(plan.notlar)}</div>` : ""}
+    <div class="plan-progress"><div class="pp-bar"><i></i></div><span></span></div>`;
+
+  const updateProgress = () => {
+    const boxes = [...wrap.querySelectorAll('input[type="checkbox"]')];
+    const done = boxes.filter((b) => b.checked).length;
+    const pct = boxes.length ? Math.round((done / boxes.length) * 100) : 0;
+    wrap.querySelector(".pp-bar i").style.width = pct + "%";
+    wrap.querySelector(".plan-progress span").textContent = `${done}/${boxes.length} tamamlandı`;
+  };
+
+  wrap.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    cb.addEventListener("change", async () => {
+      cb.closest(".plan-item").classList.toggle("done", cb.checked);
+      updateProgress();
+      try {
+        await fetch("/api/plan/tik", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode, planId: plan.id, key: cb.dataset.key, value: cb.checked }),
+        });
+      } catch {}
+    });
+  });
+  wrap.querySelector('[data-act="excel"]').addEventListener("click", () => planToExcel(plan));
+  wrap.querySelector('[data-act="pdf"]').addEventListener("click", () => planToPrint(plan));
+  updateProgress();
+  return wrap;
+}
+
+function planDosyaAdi(plan) {
+  return (plan.baslik || "beslenme-plani").replace(/[\\/:*?"<>|]+/g, "").trim() || "beslenme-plani";
+}
+
+function planToExcel(plan) {
+  if (typeof XLSX === "undefined") {
+    alert("Excel bileşeni yüklenemedi (internet bağlantısı?). PDF olarak indirebilirsin.");
+    return;
+  }
+  const rows = [["Gün", "Öğün", "İçerik", "Kalori", "Yapıldı"]];
+  const tikler = plan.tikler || {};
+  plan.ogunler.forEach((o, i) =>
+    rows.push([o.gun || "", o.ogun || "", o.icerik || "", o.kalori || "", tikler[i] ? "✓" : ""])
+  );
+  if (plan.gunlukKalori) rows.push([], ["Günlük kalori", plan.gunlukKalori]);
+  if (plan.notlar) rows.push([], ["Notlar", plan.notlar]);
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"] = [{ wch: 12 }, { wch: 12 }, { wch: 52 }, { wch: 12 }, { wch: 9 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Plan");
+  XLSX.writeFile(wb, planDosyaAdi(plan) + ".xlsx");
+}
+
+function planToPrint(plan) {
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const gruplar = {};
+  plan.ogunler.forEach((o) => { const g = o.gun || "Plan"; (gruplar[g] = gruplar[g] || []).push(o); });
+  let body = "";
+  for (const [gun, liste] of Object.entries(gruplar)) {
+    body += `<h3>${esc(gun)}</h3><table><thead><tr><th>Öğün</th><th>İçerik</th><th>Kalori</th></tr></thead><tbody>`;
+    body += liste.map((o) => `<tr><td>${esc(o.ogun)}</td><td>${esc(o.icerik)}</td><td>${esc(o.kalori)}</td></tr>`).join("");
+    body += `</tbody></table>`;
+  }
+  const w = window.open("", "_blank");
+  if (!w) { alert("Açılır pencere engellendi. Tarayıcıdan izin ver."); return; }
+  w.document.write(`<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>${esc(plan.baslik)}</title>
+  <style>body{font-family:Arial,Helvetica,sans-serif;color:#222;padding:26px;max-width:780px;margin:auto}
+  h1{font-size:20px;margin:0 0 4px} .sub{color:#666;font-size:13px;margin-bottom:12px}
+  h3{margin:18px 0 6px;color:#3a7a52} table{width:100%;border-collapse:collapse;margin-bottom:6px}
+  th,td{border:1px solid #cfd6cf;padding:6px 9px;text-align:left;font-size:13px;vertical-align:top} th{background:#eef4ee}
+  .notes{margin-top:14px;font-size:13px;background:#f6f3ea;padding:10px 12px;border-radius:6px}
+  .foot{margin-top:22px;color:#999;font-size:11px} @media print{.noprint{display:none}}</style></head><body>
+  <h1>🥗 ${esc(plan.baslik)}</h1>
+  ${plan.gunlukKalori ? `<div class="sub">${esc(plan.gunlukKalori)}</div>` : ""}
+  ${body}
+  ${plan.notlar ? `<div class="notes"><b>Notlar:</b> ${esc(plan.notlar)}</div>` : ""}
+  <div class="foot">Yaşam Ekibin · ${new Date().toLocaleDateString("tr-TR")}</div>
+  <button class="noprint" onclick="window.print()" style="margin-top:16px;padding:9px 18px;border:0;border-radius:8px;background:#3a7a52;color:#fff;font-size:14px;cursor:pointer">Yazdır / PDF kaydet</button>
+  </body></html>`);
+  w.document.close();
 }
 
 function addTyping() {

@@ -17,6 +17,21 @@ export async function threadTemizle(id) {
   await dbThreadSil(id);
 }
 
+// Bir plandaki tek bir ogunun "yapildi" durumunu degistir ve kalici kaydet.
+export async function threadPlanTik(id, planId, key, value) {
+  const liste = await dbThreadOku(id);
+  let degisti = false;
+  for (const k of liste) {
+    if (k.plan && k.plan.id === planId) {
+      k.plan.tikler = k.plan.tikler || {};
+      k.plan.tikler[String(key)] = !!value;
+      degisti = true;
+    }
+  }
+  if (degisti) await dbThreadYaz(id, liste);
+  return degisti;
+}
+
 export async function threadOzeti() {
   return await dbThreadOzeti();
 }

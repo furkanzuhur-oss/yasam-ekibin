@@ -6,7 +6,15 @@ import { fileURLToPath } from "node:url";
 import { mesajIsle } from "./src/orchestrator.js";
 import { AGENT_LIST, getAgent } from "./src/agents.js";
 import { profilOku, profileNotEkle, profilVeriKaydet } from "./src/memory.js";
-import { threadOku, threadEkle, threadTemizle, threadOzeti, llmMesajlari } from "./src/threads.js";
+import { threadOku, threadEkle, threadTemizle, threadOzeti, threadPlanTik, llmMesajlari } from "./src/threads.js";
+
+// Yeni bir plana benzersiz kimlik ver ve bos tik durumu ekle.
+function planHazirla(plan, ek = "") {
+  if (!plan) return null;
+  plan.id = "plan_" + Date.now() + (ek ? "_" + ek : "");
+  plan.tikler = {};
+  return plan;
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -50,6 +58,19 @@ app.delete("/api/thread/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
+// Plandaki bir ogunu tikle/kaldir (kalici)
+app.post("/api/plan/tik", async (req, res) => {
+  try {
+    const { mode, planId, key, value } = req.body || {};
+    if (!mode || !planId) return res.status(400).json({ hata: "mode ve planId gerekli." });
+    const ok = await threadPlanTik(mode, planId, key, value);
+    res.json({ ok });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ hata: err.message });
+  }
+});
+
 // Form gonderimi: tum alanlari alir, profili olusturur ve ajan ilk plani verir
 app.post("/api/form/submit", async (req, res) => {
   try {
@@ -89,6 +110,7 @@ app.post("/api/form/submit", async (req, res) => {
       isim: sonuc.isim, emoji: sonuc.emoji, renk: sonuc.renk,
       kaynaklar: sonuc.kaynaklar, trace: sonuc.trace, meta: { tip: "ozet" },
     };
+    if (sonuc.plan) cevapKayit.plan = planHazirla(sonuc.plan);
     await threadEkle(mode, cevapKayit);
 
     res.json({ kullanici: userKayit, cevap: cevapKayit });
@@ -116,18 +138,22 @@ app.post("/api/chat", async (req, res) => {
     const asistanKayitlari = [];
     if (sonuc.mode === "panel") {
       for (const y of sonuc.yanitlar) {
-        asistanKayitlari.push({
+        const kayit = {
           role: "assistant", content: y.metin, agentId: y.agentId,
           isim: y.isim, emoji: y.emoji, renk: y.renk,
           kaynaklar: y.kaynaklar, trace: y.trace,
-        });
+        };
+        if (y.plan) kayit.plan = planHazirla(y.plan, y.agentId);
+        asistanKayitlari.push(kayit);
       }
     } else {
-      asistanKayitlari.push({
+      const kayit = {
         role: "assistant", content: sonuc.metin, agentId: sonuc.agentId,
         isim: sonuc.isim, emoji: sonuc.emoji, renk: sonuc.renk,
         kaynaklar: sonuc.kaynaklar, trace: sonuc.trace,
-      });
+      };
+      if (sonuc.plan) kayit.plan = planHazirla(sonuc.plan);
+      asistanKayitlari.push(kayit);
     }
     await threadEkle(threadId, userKayit, ...asistanKayitlari);
 

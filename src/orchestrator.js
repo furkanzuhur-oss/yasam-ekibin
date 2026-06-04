@@ -51,6 +51,39 @@ const PROFIL_GUNCELLE = {
   },
 };
 
+// Diyetisyene ozel: somut, indirilebilir ve tiklenebilir bir ogun plani uretir.
+const BESLENME_PLANI = {
+  name: "beslenme_plani_olustur",
+  description:
+    "Kullaniciya SOMUT, indirilebilir ve takip edilebilir bir beslenme/ogun plani sunmak icin cagir. " +
+    "Yeterli bilgi (kalori hedefi, tercihler, alerjiler) topladiktan ve kullanici bir plan istedikten/hazir olduktan sonra kullan. " +
+    "Bu araci cagirinca plan kullaniciya otomatik gosterilir; planin tamamini ayrica metin olarak TEKRAR yazma. " +
+    "Cagirdiktan sonra yalnizca 1-2 cumlelik sicak bir kapanis mesaji yaz (orn. 'Iste sana ozel planin, asagidan tikleyip takip edeb, Excel/PDF olarak indirebilirsin').",
+  parameters: {
+    type: "object",
+    properties: {
+      baslik: { type: "string", description: "Plan basligi, orn '7 Gunluk Beslenme Plani'." },
+      gunlukKalori: { type: "string", description: "Tahmini gunluk kalori, orn '~1800 kcal'. Bilinmiyorsa bos birak." },
+      ogunler: {
+        type: "array",
+        description: "Her ogun ayri bir kayit. Gunlere gore sirali ver.",
+        items: {
+          type: "object",
+          properties: {
+            gun: { type: "string", description: "orn 'Pazartesi' ya da gun ayrimi yoksa 'Her gun'." },
+            ogun: { type: "string", description: "orn 'Kahvalti', 'Ara Ogun', 'Ogle', 'Aksam'." },
+            icerik: { type: "string", description: "Yenecekler ve porsiyonlar." },
+            kalori: { type: "string", description: "Bu ogunun tahmini kalorisi, orn '~350 kcal'. Opsiyonel." },
+          },
+          required: ["gun", "ogun", "icerik"],
+        },
+      },
+      notlar: { type: "string", description: "Genel oneriler (su tuketimi, uyku, atistirma vb). Opsiyonel." },
+    },
+    required: ["baslik", "ogunler"],
+  },
+};
+
 // --- Mesajlari Gemini formatina cevir ----------------------------------------
 function toContents(messages) {
   const c = messages.map((m) => ({
@@ -78,10 +111,12 @@ async function ajaniCalistir({ agentId, contents, profilStr, trace, derinlik = 0
 
   const decls = [WEB_ARAMA, PROFIL_GUNCELLE];
   if (derinlik < 2) decls.push(consultDecl(agentId));
+  if (agentId === "diyetisyen" && derinlik === 0) decls.push(BESLENME_PLANI);
   const tools = [{ function_declarations: decls }];
 
   const calisma = [...contents];
   let kaynaklar = [];
+  let plan = null;
   let guvenlik = 0;
 
   while (guvenlik++ < 6) {
@@ -94,7 +129,7 @@ async function ajaniCalistir({ agentId, contents, profilStr, trace, derinlik = 0
     const { metin, cagrilar } = ayikla(content);
 
     if (!cagrilar.length) {
-      return { metin: metin || "(Bos yanit)", kaynaklar };
+      return { metin: metin || "(Bos yanit)", kaynaklar, plan };
     }
 
     calisma.push(content); // modelin fonksiyon cagrisi iceren yaniti
@@ -121,6 +156,20 @@ async function ajaniCalistir({ agentId, contents, profilStr, trace, derinlik = 0
         trace.push({ tur: "hafiza", ajan: agentId, bilgi: args.bilgi });
         yanitParcalari.push({
           functionResponse: { name: ad, response: { durum: "kaydedildi" } },
+        });
+      } else if (ad === "beslenme_plani_olustur") {
+        plan = {
+          baslik: args.baslik || "Beslenme Planı",
+          gunlukKalori: args.gunlukKalori || "",
+          ogunler: Array.isArray(args.ogunler) ? args.ogunler : [],
+          notlar: args.notlar || "",
+        };
+        trace.push({ tur: "plan", ajan: agentId, baslik: plan.baslik });
+        yanitParcalari.push({
+          functionResponse: {
+            name: ad,
+            response: { durum: "Plan olusturuldu ve kullaniciya gosterildi." },
+          },
         });
       } else if (ad === "meslektasina_danis") {
         const hedef = getAgent(args.meslektas);
@@ -166,7 +215,7 @@ async function ajaniCalistir({ agentId, contents, profilStr, trace, derinlik = 0
     calisma.push({ role: "user", parts: yanitParcalari });
   }
 
-  return { metin: "(Yanit sinira ulasti, tekrar deneyin.)", kaynaklar };
+  return { metin: "(Yanit sinira ulasti, tekrar deneyin.)", kaynaklar, plan };
 }
 
 // --- Yonlendirici ------------------------------------------------------------
@@ -240,6 +289,7 @@ export async function mesajIsle({ messages, mode = "auto" }) {
           renk: a.renk,
           metin: r.metin,
           kaynaklar: r.kaynaklar,
+          plan: r.plan,
           trace: t,
         };
       })
@@ -260,6 +310,7 @@ export async function mesajIsle({ messages, mode = "auto" }) {
     renk: agent.renk,
     metin: r.metin,
     kaynaklar: r.kaynaklar,
+    plan: r.plan,
     trace,
   };
 }
