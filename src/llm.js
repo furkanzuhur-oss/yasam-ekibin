@@ -43,19 +43,28 @@ async function tekCagri(model, body, key) {
   return { ok: r.ok, status: r.status, data };
 }
 
+// Modelin generationConfig'ini kur.
+// NOT: 2.5 modelleri "dusunen" modeldir ve dusunme tokenlari da bu butceden harcanir;
+// 2048 cok dusuktu ve metni bos birakiyordu (ozellikle buyuk plan uretiminde). 8192'ye
+// cikariyoruz. Dusunmeyi KAPATMIYORUZ: thinkingBudget:0 ile cok turlu arac kullaniminda
+// 2.5, functionCall'a thought_signature eklemeyince API 400 veriyor.
+function genConfig(_model) {
+  return { temperature: 0.8, maxOutputTokens: 8192 };
+}
+
 // Tek bir uretim cagrisi. 429/503'te once kisaca bekler, sonra yedek modele gecer.
 export async function generate({ model, system, contents, tools }) {
   const key = getKey();
   const body = { contents };
   if (system) body.system_instruction = { parts: [{ text: system }] };
   if (tools) body.tools = tools;
-  body.generationConfig = { temperature: 0.8, maxOutputTokens: 2048 };
 
   const zincir = modelZinciri(model);
   let sonMsg = "";
 
   for (let i = 0; i < zincir.length; i++) {
     const m = zincir[i];
+    body.generationConfig = genConfig(m); // her model icin uygun ayar
     // Her model icin en fazla 2 kisa deneme (kisa bekleme), sonra siradaki modele gec.
     for (let deneme = 1; deneme <= 2; deneme++) {
       const { ok, status, data } = await tekCagri(m, body, key);

@@ -95,6 +95,18 @@ function toContents(messages) {
   return c;
 }
 
+// Modelin kendi adini basa eklemesini ("Diyetisyen:", "Selin:", "Diyetisyen Selin:")
+// temizle. Gecmis mesajlar modele "Isim: ..." diye beslendigi icin bunu taklit edebiliyor.
+function isimOnekiTemizle(metin, agent) {
+  if (!metin) return metin;
+  const adlar = [agent.kocAdi, agent.isim].filter(Boolean);
+  if (!adlar.length) return metin;
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const grup = "(?:" + adlar.map(esc).join("|") + ")";
+  const pat = new RegExp("^\\s*" + grup + "(?:\\s+" + grup + ")*\\s*:\\s*", "i");
+  return metin.replace(pat, "");
+}
+
 // --- Tek bir ajani calistir (arac dongusu ile) -------------------------------
 function sistemKur(agent, profilStr) {
   const intake = agent.acilis?.length
@@ -117,6 +129,7 @@ async function ajaniCalistir({ agentId, contents, profilStr, trace, derinlik = 0
   const calisma = [...contents];
   let kaynaklar = [];
   let plan = null;
+  let bosTekrar = false;
   let guvenlik = 0;
 
   while (guvenlik++ < 6) {
@@ -129,7 +142,16 @@ async function ajaniCalistir({ agentId, contents, profilStr, trace, derinlik = 0
     const { metin, cagrilar } = ayikla(content);
 
     if (!cagrilar.length) {
-      return { metin: metin || "(Bos yanit)", kaynaklar, plan };
+      // Model bos metin dondurduyse (or. token butcesi/dusunme) ayni baglamda bir kez daha dene.
+      if (!metin && !bosTekrar) {
+        bosTekrar = true;
+        continue;
+      }
+      return {
+        metin: isimOnekiTemizle(metin, agent) || "Bir an boşa düştüm 😅 Mesajını tekrar yazar mısın?",
+        kaynaklar,
+        plan,
+      };
     }
 
     calisma.push(content); // modelin fonksiyon cagrisi iceren yaniti
