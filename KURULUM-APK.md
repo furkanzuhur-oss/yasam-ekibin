@@ -3,20 +3,21 @@
 Hedef: Uygulama bulutta çalışsın (her cihazdan eriş), veriler bulut veritabanında
 güvende olsun ve telefona **APK olarak** kurulabilsin.
 
-Üç ücretsiz hesap gerekiyor: **MongoDB Atlas** (veritabanı), **GitHub** (kod),
+Üç ücretsiz hesap gerekiyor: **Firebase** (veritabanı — Google hesabınla), **GitHub** (kod),
 **Render** (barındırma). Sonra **PWABuilder** ile APK üretilecek. Hiçbiri ücret almaz.
 
 ---
 
-## 1) Bulut veritabanı — MongoDB Atlas (5 dk)
+## 1) Bulut veritabanı — Firebase Firestore (5 dk)
 
-1. https://www.mongodb.com/cloud/atlas/register → ücretsiz kayıt ol.
-2. **Create** → **M0 (Free)** cluster oluştur (bölge: sana yakın, örn. Frankfurt).
-3. **Database Access** → **Add New Database User** → kullanıcı adı + şifre belirle (not al).
-4. **Network Access** → **Add IP Address** → **Allow Access from Anywhere** (0.0.0.0/0).
-5. **Database** → **Connect** → **Drivers** → çıkan bağlantı adresini kopyala:
-   `mongodb+srv://KULLANICI:SIFRE@cluster0.xxxx.mongodb.net/?retryWrites=true&w=majority`
-   (KULLANICI/SIFRE kısmını kendi bilgilerinle değiştir.)
+1. https://console.firebase.google.com → **Add project** (Google hesabınla). Analytics'i kapatabilirsin.
+2. Sol menü **Build → Firestore Database** → **Create database** → **Production mode** → bölge (örn. eur3) → Enable.
+3. Sol üstte ⚙️ **Project settings** → **Service accounts** sekmesi → **Generate new private key** → bir **JSON dosyası** iner.
+4. Bu JSON'u base64'e çevirip tek satır yap (PowerShell):
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\inen\serviceAccount.json")) | Set-Clipboard
+   ```
+   (Artık panoda; bir yere yapıştırıp saklayabilirsin. Bu değer `FIREBASE_SERVICE_ACCOUNT_B64` olacak.)
 
 ---
 
@@ -45,8 +46,7 @@ güvende olsun ve telefona **APK olarak** kurulabilsin.
 4. **Environment** bölümüne şu değişkenleri ekle:
    - `GEMINI_API_KEY` = (kendi Gemini anahtarın)
    - `TAVILY_API_KEY` = (kendi Tavily anahtarın)
-   - `MONGODB_URI` = (1. adımdaki bağlantı adresi)
-   - `MONGODB_DB` = `yasam_ekibi`
+   - `FIREBASE_SERVICE_ACCOUNT_B64` = (1. adımdaki base64 değeri)
 5. **Create Web Service** → birkaç dakikada `https://yasam-ekibin.onrender.com` gibi bir adres verir.
 6. O adresi telefonda/masaüstünde aç — çalışıyor olmalı.
    > Ücretsiz plan 15 dk hareketsizlikte uyur; ilk açılış ~30-50 sn sürebilir, sonra hızlanır.
@@ -67,6 +67,6 @@ o da ikon olarak ekler (APK üretmeden).
 ---
 
 ## Notlar
-- Veriler artık MongoDB Atlas'ta; hangi cihazdan girersen aynı sohbetler.
+- Veriler artık Firebase Firestore'da; hangi cihazdan girersen aynı sohbetler.
 - Anahtarları sadece Render'ın Environment bölümüne girdin; kodda/GitHub'da yok.
 - İleride kod güncelleyince `git push` yeterli — Render otomatik yeniden dağıtır.

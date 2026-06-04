@@ -12,7 +12,5 @@ services:
         sync: false
       - key: TAVILY_API_KEY
         sync: false
-      - key: MONGODB_URI
+      - key: FIREBASE_SERVICE_ACCOUNT_B64
         sync: false
-      - key: MONGODB_DB
-        value: yasam_ekibi
