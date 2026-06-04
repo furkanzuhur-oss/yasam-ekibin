@@ -10,21 +10,27 @@ const DATA_DIR = join(__dirname, "..", "data");
 const CONV_PATH = join(DATA_DIR, "conversations.json");
 const PROF_PATH = join(DATA_DIR, "profile.json");
 
-// Servis hesabini coz (ham JSON ya da base64).
+// Servis hesabini coz (ham JSON ya da base64). LAZY: ilk kullanimda okunur,
+// boylece .env (dotenv) yuklendikten SONRA degerlendirilir.
+let _svc = undefined; // undefined = henuz bakilmadi
 function servisHesabi() {
+  if (_svc !== undefined) return _svc;
   const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64;
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   try {
-    if (b64) return JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
-    if (raw) return JSON.parse(raw);
+    if (b64) _svc = JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
+    else if (raw) _svc = JSON.parse(raw);
+    else _svc = null;
   } catch (e) {
     console.error("FIREBASE servis hesabi cozulemedi:", e.message);
+    _svc = null;
   }
-  return null;
+  return _svc;
 }
 
-const SVC = servisHesabi();
-export const bulutModu = !!SVC;
+function bulutModu() {
+  return !!servisHesabi();
+}
 
 // ---------- Firestore backend ----------
 let _fs = null;
@@ -33,7 +39,7 @@ async function firestore() {
     _fs = (async () => {
       const { default: admin } = await import("firebase-admin");
       if (!admin.apps.length) {
-        admin.initializeApp({ credential: admin.credential.cert(SVC) });
+        admin.initializeApp({ credential: admin.credential.cert(servisHesabi()) });
       }
       console.log("  Bulut veritabanina baglanildi (Firebase Firestore).");
       return admin.firestore();
@@ -57,7 +63,7 @@ async function dosyaYaz(path, obj) {
 
 // ---------- PROFIL ----------
 export async function dbProfilOku() {
-  if (bulutModu) {
+  if (bulutModu()) {
     const db = await firestore();
     const d = await db.collection("meta").doc("profile").get();
     return d.exists ? JSON.parse(d.data().json) : null;
@@ -65,7 +71,7 @@ export async function dbProfilOku() {
   return await dosyaOku(PROF_PATH, null);
 }
 export async function dbProfilYaz(data) {
-  if (bulutModu) {
+  if (bulutModu()) {
     const db = await firestore();
     await db.collection("meta").doc("profile").set({ json: JSON.stringify(data) });
     return data;
@@ -76,7 +82,7 @@ export async function dbProfilYaz(data) {
 
 // ---------- THREAD'LER ----------
 export async function dbThreadOku(id) {
-  if (bulutModu) {
+  if (bulutModu()) {
     const db = await firestore();
     const d = await db.collection("conversations").doc(id).get();
     return d.exists ? JSON.parse(d.data().json) : [];
@@ -85,7 +91,7 @@ export async function dbThreadOku(id) {
   return hepsi[id] || [];
 }
 export async function dbThreadYaz(id, liste) {
-  if (bulutModu) {
+  if (bulutModu()) {
     const db = await firestore();
     await db.collection("conversations").doc(id).set({ json: JSON.stringify(liste) });
     return liste;
@@ -96,7 +102,7 @@ export async function dbThreadYaz(id, liste) {
   return liste;
 }
 export async function dbThreadSil(id) {
-  if (bulutModu) {
+  if (bulutModu()) {
     const db = await firestore();
     await db.collection("conversations").doc(id).delete();
     return;
@@ -107,7 +113,7 @@ export async function dbThreadSil(id) {
 }
 export async function dbThreadOzeti() {
   const ozet = {};
-  if (bulutModu) {
+  if (bulutModu()) {
     const db = await firestore();
     const snap = await db.collection("conversations").get();
     snap.forEach((d) => {
