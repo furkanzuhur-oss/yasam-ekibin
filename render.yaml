@@ -8,6 +8,12 @@ services:
     buildCommand: npm install
     startCommand: npm start
     envVars:
+      # Sabit modeller (kodun varsayilani daha eski; bunlar onun yerine gecer)
+      - key: AGENT_MODEL
+        value: gemini-2.5-flash
+      - key: ROUTER_MODEL
+        value: gemini-2.5-flash-lite
+      # Gizli anahtarlar — Render panelinden elle girilir
       - key: GEMINI_API_KEY
         sync: false
       - key: TAVILY_API_KEY
